@@ -28,6 +28,7 @@ import (
 
 	test "github.com/libp2p/go-libp2p-kad-dht/internal/testing"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 
 	"github.com/ipfs/go-cid"
 	detectrace "github.com/ipfs/go-detect-race"
@@ -67,17 +68,17 @@ func init() {
 	}
 }
 
-type blankValidator struct{}
+type blankReducer struct{}
 
-func (blankValidator) Validate(_ string, _ []byte) error        { return nil }
-func (blankValidator) Select(_ string, _ [][]byte) (int, error) { return 0, nil }
+func (blankReducer) Validate(_ string, _ []byte) error                     { return nil }
+func (blankReducer) Reduce(_ string, values [][]byte) ([]byte, int, error) { return values[0], 0, nil }
 
-type testAtomicPutValidator struct {
-	test.TestValidator
+type testAtomicPutReducer struct {
+	test.TestReducer
 }
 
 // selects the entry with the 'highest' last byte
-func (testAtomicPutValidator) Select(_ string, bs [][]byte) (int, error) {
+func (testAtomicPutReducer) Select(_ string, bs [][]byte) (int, error) {
 	index := -1
 	max := uint8(0)
 	for i, b := range bs {
@@ -107,7 +108,7 @@ var testPrefix = ProtocolPrefix("/test")
 func setupDHT(ctx context.Context, t *testing.T, client bool, options ...Option) *IpfsDHT {
 	baseOpts := []Option{
 		testPrefix,
-		NamespacedValidator("v", blankValidator{}),
+		NamespacedReducer("v", blankReducer{}),
 		DisableAutoRefresh(),
 	}
 
@@ -346,8 +347,8 @@ func TestValueSetInvalid(t *testing.T) {
 	defer dhtA.host.Close()
 	defer dhtB.host.Close()
 
-	dhtA.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
-	dhtB.Validator.(record.NamespacedValidator)["v"] = blankValidator{}
+	dhtA.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
+	dhtB.Reducer.(reducer.NamespacedReducer)["v"] = blankReducer{}
 
 	connect(t, ctx, dhtA, dhtB)
 
@@ -428,8 +429,8 @@ func TestSearchValue(t *testing.T) {
 
 	connect(t, ctx, dhtA, dhtB)
 
-	dhtA.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
-	dhtB.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
+	dhtA.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
+	dhtB.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
 
 	ctxT, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -482,8 +483,8 @@ func TestValueGetInvalid(t *testing.T) {
 	defer dhtA.host.Close()
 	defer dhtB.host.Close()
 
-	dhtA.Validator.(record.NamespacedValidator)["v"] = blankValidator{}
-	dhtB.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
+	dhtA.Reducer.(reducer.NamespacedReducer)["v"] = blankReducer{}
+	dhtB.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
 
 	connect(t, ctx, dhtA, dhtB)
 
@@ -715,7 +716,7 @@ func TestRefreshBelowMinRTThreshold(t *testing.T) {
 		host,
 		testPrefix,
 		Mode(ModeServer),
-		NamespacedValidator("v", blankValidator{}),
+		NamespacedReducer("v", blankReducer{}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1247,7 +1248,7 @@ func TestAtomicPut(t *testing.T) {
 	defer cancel()
 
 	d := setupDHT(ctx, t, false)
-	d.Validator = testAtomicPutValidator{}
+	d.Reducer = testAtomicPutReducer{}
 
 	// fnc to put a record
 	key := "testkey"
@@ -1596,7 +1597,7 @@ func TestHandleRemotePeerProtocolChanges(t *testing.T) {
 	os := []Option{
 		testPrefix,
 		Mode(ModeServer),
-		NamespacedValidator("v", blankValidator{}),
+		NamespacedReducer("v", blankReducer{}),
 		DisableAutoRefresh(),
 	}
 
@@ -1642,7 +1643,7 @@ func TestGetSetPluggedProtocol(t *testing.T) {
 		os := []Option{
 			ProtocolPrefix("/esh"),
 			Mode(ModeServer),
-			NamespacedValidator("v", blankValidator{}),
+			NamespacedReducer("v", blankReducer{}),
 			DisableAutoRefresh(),
 		}
 
@@ -1683,7 +1684,7 @@ func TestGetSetPluggedProtocol(t *testing.T) {
 		dhtA, err := New(ctx, hA, []Option{
 			ProtocolPrefix("/esh"),
 			Mode(ModeServer),
-			NamespacedValidator("v", blankValidator{}),
+			NamespacedReducer("v", blankReducer{}),
 			DisableAutoRefresh(),
 		}...)
 		require.NoError(t, err)
@@ -1695,7 +1696,7 @@ func TestGetSetPluggedProtocol(t *testing.T) {
 		dhtB, err := New(ctx, hB, []Option{
 			ProtocolPrefix("/lsr"),
 			Mode(ModeServer),
-			NamespacedValidator("v", blankValidator{}),
+			NamespacedReducer("v", blankReducer{}),
 			DisableAutoRefresh(),
 		}...)
 		require.NoError(t, err)
@@ -1970,7 +1971,7 @@ func TestBootStrapWhenRTIsEmpty(t *testing.T) {
 			ctx,
 			h1,
 			testPrefix,
-			NamespacedValidator("v", blankValidator{}),
+			NamespacedReducer("v", blankReducer{}),
 			Mode(ModeServer),
 			BootstrapPeers(bootstrapAddrs[0]),
 		)
@@ -2010,7 +2011,7 @@ func TestBootStrapWhenRTIsEmpty(t *testing.T) {
 			ctx,
 			h1,
 			testPrefix,
-			NamespacedValidator("v", blankValidator{}),
+			NamespacedReducer("v", blankReducer{}),
 			Mode(ModeServer),
 			BootstrapPeers(bootstrapAddrs[1], bootstrapAddrs[2]),
 		)

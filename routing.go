@@ -36,7 +36,7 @@ func (dht *IpfsDHT) PutValue(ctx context.Context, key string, value []byte, opts
 	logger.Debugw("putting value", "key", internal.LoggableRecordKeyString(key))
 
 	// don't even allow local users to put bad values.
-	if err := dht.Validator.Validate(key, value); err != nil {
+	if err := dht.Reducer.Validate(key, value); err != nil {
 		return err
 	}
 
@@ -49,13 +49,14 @@ func (dht *IpfsDHT) PutValue(ctx context.Context, key string, value []byte, opts
 	// Check if we have an old value that's not the same as the new one.
 	if old != nil && !bytes.Equal(old.GetValue(), value) {
 		// Check to see if the new one is better.
-		i, err := dht.Validator.Select(key, [][]byte{value, old.GetValue()})
+		reduced, i, err := dht.Reducer.Reduce(key, [][]byte{value, old.GetValue()})
 		if err != nil {
 			return err
 		}
-		if i != 0 {
+		if i == 1 {
 			return fmt.Errorf("can't replace a newer value with an older value")
 		}
+		value = reduced
 	}
 
 	rec := record.MakePutRecord(key, value)
@@ -225,13 +226,23 @@ loop:
 					aborted = newVal(ctx, v, false)
 					continue
 				}
-				sel, err := dht.Validator.Select(key, [][]byte{best, v.Val})
+				reduced, sel, err := dht.Reducer.Reduce(key, [][]byte{best, v.Val})
 				if err != nil {
 					logger.Warnw("failed to select best value", "key", internal.LoggableRecordKeyString(key), "error", err)
 					continue
 				}
-				if sel != 1 {
+				// check if reducing created a new best
+				if sel == 0 {
 					aborted = newVal(ctx, v, false)
+					continue
+				} else if sel != 1 {
+					// we have newly created the best
+					best = reduced
+					v.Val = reduced
+					// no peers (including v.From) have the best since it was just created
+					peersWithBest = make(map[peer.ID]struct{})
+					// it's ok to leave the v.From since it doesn't get used anywhere
+					aborted = newVal(ctx, v, true)
 					continue
 				}
 			}
@@ -317,7 +328,7 @@ func (dht *IpfsDHT) getValues(ctx context.Context, key string, stopQuery chan st
 					logger.Debug("received a nil record value")
 					return peers, nil
 				}
-				if err := dht.Validator.Validate(key, val); err != nil {
+				if err := dht.Reducer.Validate(key, val); err != nil {
 					// make sure record is valid
 					logger.Debugw("received invalid record (discarded)", "error", err)
 					return peers, nil

@@ -36,6 +36,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 	kb "github.com/libp2p/go-libp2p-kbucket"
 
 	record "github.com/libp2p/go-libp2p-record"
@@ -63,7 +64,7 @@ type FullRT struct {
 	wg     sync.WaitGroup
 
 	enableValues, enableProviders bool
-	Validator                     record.Validator
+	Reducer                       reducer.Reducer
 	ProviderManager               *providers.ProviderManager
 	datastore                     ds.Datastore
 	h                             host.Host
@@ -111,12 +112,12 @@ func NewFullRT(h host.Host, protocolPrefix protocol.ID, options ...Option) (*Ful
 	}
 
 	dhtcfg := &internalConfig.Config{
-		Datastore:        dssync.MutexWrap(ds.NewMapDatastore()),
-		Validator:        record.NamespacedValidator{},
-		ValidatorChanged: false,
-		EnableProviders:  true,
-		EnableValues:     true,
-		ProtocolPrefix:   protocolPrefix,
+		Datastore:       dssync.MutexWrap(ds.NewMapDatastore()),
+		Reducer:         reducer.NamespacedReducer{},
+		ReducerChanged:  false,
+		EnableProviders: true,
+		EnableValues:    true,
+		ProtocolPrefix:  protocolPrefix,
 	}
 
 	if err := dhtcfg.Apply(fullrtcfg.dhtOpts...); err != nil {
@@ -162,7 +163,7 @@ func NewFullRT(h host.Host, protocolPrefix protocol.ID, options ...Option) (*Ful
 
 		enableValues:    dhtcfg.EnableValues,
 		enableProviders: dhtcfg.EnableProviders,
-		Validator:       dhtcfg.Validator,
+		Reducer:         dhtcfg.Reducer,
 		ProviderManager: pm,
 		datastore:       dhtcfg.Datastore,
 		h:               h,
@@ -451,7 +452,7 @@ func (dht *FullRT) PutValue(ctx context.Context, key string, value []byte, opts 
 	logger.Debugw("putting value", "key", internal.LoggableRecordKeyString(key))
 
 	// don't even allow local users to put bad values.
-	if err := dht.Validator.Validate(key, value); err != nil {
+	if err := dht.Reducer.Validate(key, value); err != nil {
 		return err
 	}
 
@@ -464,13 +465,12 @@ func (dht *FullRT) PutValue(ctx context.Context, key string, value []byte, opts 
 	// Check if we have an old value that's not the same as the new one.
 	if old != nil && !bytes.Equal(old.GetValue(), value) {
 		// Check to see if the new one is better.
-		i, err := dht.Validator.Select(key, [][]byte{value, old.GetValue()})
+		oldValue := old.GetValue()
+		reduced, _, err := dht.Reducer.Reduce(key, [][]byte{value, oldValue})
 		if err != nil {
 			return err
 		}
-		if i != 0 {
-			return fmt.Errorf("can't replace a newer value with an older value")
-		}
+		value = reduced
 	}
 
 	rec := record.MakePutRecord(key, value)
@@ -635,13 +635,24 @@ loop:
 					aborted = newVal(ctx, v, false)
 					continue
 				}
-				sel, err := dht.Validator.Select(key, [][]byte{best, v.Val})
+				reduced, sel, err := dht.Reducer.Reduce(key, [][]byte{best, v.Val})
 				if err != nil {
 					logger.Warnw("failed to select best value", "key", internal.LoggableRecordKeyString(key), "error", err)
 					continue
 				}
-				if sel != 1 {
+				// check if reducing created a new best
+				if sel == 0 {
+					v.Val = reduced
 					aborted = newVal(ctx, v, false)
+					continue
+				} else if sel != 1 {
+					// we have a new best
+					best = v.Val
+					// no peers (including v.From) have the best since it was just created
+					peersWithBest = make(map[peer.ID]struct{})
+					// it's ok to leave the v.From since it doesn't get used anywhere
+					v.Val = reduced
+					aborted = newVal(ctx, v, true)
 					continue
 				}
 			}
@@ -737,7 +748,7 @@ func (dht *FullRT) getValues(ctx context.Context, key string, stopQuery chan str
 				logger.Debug("received a nil record value")
 				return nil
 			}
-			if err := dht.Validator.Validate(key, val); err != nil {
+			if err := dht.Reducer.Validate(key, val); err != nil {
 				// make sure record is valid
 				logger.Debugw("received invalid record (discarded)", "error", err)
 				return nil
@@ -1479,7 +1490,7 @@ func (dht *FullRT) getRecordFromDatastore(ctx context.Context, dskey ds.Key) (*r
 		return nil, nil
 	}
 
-	err = dht.Validator.Validate(string(rec.GetKey()), rec.GetValue())
+	err = dht.Reducer.Validate(string(rec.GetKey()), rec.GetValue())
 	if err != nil {
 		// Invalid record in datastore, probably expired but don't return an error,
 		// we'll just overwrite it
