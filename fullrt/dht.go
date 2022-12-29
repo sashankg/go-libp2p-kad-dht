@@ -642,16 +642,15 @@ loop:
 				}
 				// check if reducing created a new best
 				if sel == 0 {
-					v.Val = reduced
 					aborted = newVal(ctx, v, false)
 					continue
 				} else if sel != 1 {
-					// we have a new best
-					best = v.Val
+					// we have newly created the best
+					best = reduced
+					v.Val = reduced
 					// no peers (including v.From) have the best since it was just created
 					peersWithBest = make(map[peer.ID]struct{})
 					// it's ok to leave the v.From since it doesn't get used anywhere
-					v.Val = reduced
 					aborted = newVal(ctx, v, true)
 					continue
 				}
