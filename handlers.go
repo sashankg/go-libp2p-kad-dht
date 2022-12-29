@@ -166,7 +166,7 @@ func (dht *IpfsDHT) handlePutValue(ctx context.Context, p peer.ID, pmes *pb.Mess
 	cleanRecord(rec)
 
 	// Make sure the record is valid (not expired, valid signature etc)
-	if err = dht.Validator.Validate(string(rec.GetKey()), rec.GetValue()); err != nil {
+	if err = dht.Reducer.Validate(string(rec.GetKey()), rec.GetValue()); err != nil {
 		logger.Infow("bad dht record in PUT", "from", p, "key", internal.LoggableRecordKeyBytes(rec.GetKey()), "error", err)
 		return nil, err
 	}
@@ -194,15 +194,16 @@ func (dht *IpfsDHT) handlePutValue(ctx context.Context, p peer.ID, pmes *pb.Mess
 
 	if existing != nil {
 		recs := [][]byte{rec.GetValue(), existing.GetValue()}
-		i, err := dht.Validator.Select(string(rec.GetKey()), recs)
+		reduced, i, err := dht.Reducer.Reduce(string(rec.GetKey()), recs)
 		if err != nil {
 			logger.Warnw("dht record passed validation but failed select", "from", p, "key", internal.LoggableRecordKeyBytes(rec.GetKey()), "error", err)
 			return nil, err
 		}
-		if i != 0 {
+		if i == 1 {
 			logger.Infow("DHT record in PUT older than existing record (ignoring)", "peer", p, "key", internal.LoggableRecordKeyBytes(rec.GetKey()))
 			return nil, errors.New("old record")
 		}
+		rec.Value = reduced
 	}
 
 	// record the time we receive every record
@@ -236,7 +237,7 @@ func (dht *IpfsDHT) getRecordFromDatastore(ctx context.Context, dskey ds.Key) (*
 		return nil, nil
 	}
 
-	err = dht.Validator.Validate(string(rec.GetKey()), rec.GetValue())
+	err = dht.Reducer.Validate(string(rec.GetKey()), rec.GetValue())
 	if err != nil {
 		// Invalid record in datastore, probably expired but don't return an error,
 		// we'll just overwrite it

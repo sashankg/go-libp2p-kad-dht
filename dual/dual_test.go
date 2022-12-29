@@ -9,7 +9,7 @@ import (
 	u "github.com/ipfs/go-ipfs-util"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	test "github.com/libp2p/go-libp2p-kad-dht/internal/testing"
-	record "github.com/libp2p/go-libp2p-record"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	peerstore "github.com/libp2p/go-libp2p/core/peerstore"
@@ -26,10 +26,10 @@ func init() {
 	lancid = cid.NewCidV1(cid.DagCBOR, u.Hash([]byte("lan cid -- value")))
 }
 
-type blankValidator struct{}
+type blankReducer struct{}
 
-func (blankValidator) Validate(_ string, _ []byte) error        { return nil }
-func (blankValidator) Select(_ string, _ [][]byte) (int, error) { return 0, nil }
+func (blankReducer) Validate(_ string, _ []byte) error                     { return nil }
+func (blankReducer) Reduce(_ string, values [][]byte) ([]byte, int, error) { return values[0], 0, nil }
 
 type customRtHelper struct {
 	allow peer.ID
@@ -63,7 +63,7 @@ func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Optio
 
 	wanFilter, wanRef := MkFilterForPeer()
 	wanOpts := []dht.Option{
-		dht.NamespacedValidator("v", blankValidator{}),
+		dht.NamespacedReducer("v", blankReducer{}),
 		dht.ProtocolPrefix("/test"),
 		dht.DisableAutoRefresh(),
 		dht.RoutingTableFilter(wanFilter),
@@ -73,7 +73,7 @@ func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Optio
 
 	lanFilter, lanRef := MkFilterForPeer()
 	lanOpts := []dht.Option{
-		dht.NamespacedValidator("v", blankValidator{}),
+		dht.NamespacedReducer("v", blankReducer{}),
 		dht.ProtocolPrefix("/test"),
 		dht.ProtocolExtension(LanExtension),
 		dht.DisableAutoRefresh(),
@@ -95,7 +95,7 @@ func setupDHT(ctx context.Context, t *testing.T, options ...dht.Option) *DHT {
 	t.Cleanup(func() { host.Close() })
 
 	baseOpts := []dht.Option{
-		dht.NamespacedValidator("v", blankValidator{}),
+		dht.NamespacedReducer("v", blankReducer{}),
 		dht.ProtocolPrefix("/test"),
 		dht.DisableAutoRefresh(),
 	}
@@ -139,7 +139,7 @@ func wait(ctx context.Context, t *testing.T, a, b *dht.IpfsDHT) {
 func setupTier(ctx context.Context, t *testing.T) (*DHT, *dht.IpfsDHT, *dht.IpfsDHT) {
 	t.Helper()
 	baseOpts := []dht.Option{
-		dht.NamespacedValidator("v", blankValidator{}),
+		dht.NamespacedReducer("v", blankReducer{}),
 		dht.ProtocolPrefix("/test"),
 		dht.DisableAutoRefresh(),
 	}
@@ -278,8 +278,8 @@ func TestSearchValue(t *testing.T) {
 	defer wan.Close()
 	defer lan.Close()
 
-	d.WAN.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
-	d.LAN.Validator.(record.NamespacedValidator)["v"] = test.TestValidator{}
+	d.WAN.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
+	d.LAN.Reducer.(reducer.NamespacedReducer)["v"] = test.TestReducer{}
 
 	_ = wan.PutValue(ctx, "/v/hello", []byte("valid"))
 

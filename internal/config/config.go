@@ -8,8 +8,8 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-ipns"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 	"github.com/libp2p/go-libp2p-kbucket/peerdiversity"
-	record "github.com/libp2p/go-libp2p-record"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -33,8 +33,8 @@ type RouteTableFilterFunc func(dht interface{}, p peer.ID) bool
 // Config is a structure containing all the options that can be used when constructing a DHT.
 type Config struct {
 	Datastore          ds.Batching
-	Validator          record.Validator
-	ValidatorChanged   bool // if true implies that the validator has been changed and that Defaults should not be used
+	Reducer            reducer.Reducer
+	ReducerChanged     bool // if true implies that the validator has been changed and that Defaults should not be used
 	Mode               ModeOpt
 	ProtocolPrefix     protocol.ID
 	V1ProtocolOverride protocol.ID
@@ -80,14 +80,14 @@ func (c *Config) Apply(opts ...Option) error {
 // ApplyFallbacks sets default values that could not be applied during config creation since they are dependent
 // on other configuration parameters (e.g. optA is by default 2x optB) and/or on the Host
 func (c *Config) ApplyFallbacks(h host.Host) error {
-	if !c.ValidatorChanged {
-		nsval, ok := c.Validator.(record.NamespacedValidator)
+	if !c.ReducerChanged {
+		nsred, ok := c.Reducer.(reducer.NamespacedReducer)
 		if ok {
-			if _, pkFound := nsval["pk"]; !pkFound {
-				nsval["pk"] = record.PublicKeyValidator{}
+			if _, pkFound := nsred["pk"]; !pkFound {
+				nsred["pk"] = reducer.PublicKeyReducer{}
 			}
-			if _, ipnsFound := nsval["ipns"]; !ipnsFound {
-				nsval["ipns"] = ipns.Validator{KeyBook: h.Peerstore()}
+			if _, ipnsFound := nsred["ipns"]; !ipnsFound {
+				nsred["ipns"] = reducer.IpnsReducer{Validator: &ipns.Validator{KeyBook: h.Peerstore()}}
 			}
 		} else {
 			return fmt.Errorf("the default Validator was changed without being marked as changed")
@@ -102,7 +102,7 @@ type Option func(*Config) error
 // Defaults are the default DHT options. This option will be automatically
 // prepended to any options you pass to the DHT constructor.
 var Defaults = func(o *Config) error {
-	o.Validator = record.NamespacedValidator{}
+	o.Reducer = reducer.NamespacedReducer{}
 	o.Datastore = dssync.MutexWrap(ds.NewMapDatastore())
 	o.ProtocolPrefix = DefaultPrefix
 	o.EnableProviders = true
@@ -137,7 +137,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("protocol prefix %s must have values enabled", DefaultPrefix)
 	}
 
-	nsval, isNSVal := c.Validator.(record.NamespacedValidator)
+	nsval, isNSVal := c.Reducer.(reducer.NamespacedReducer)
 	if !isNSVal {
 		return fmt.Errorf("protocol prefix %s must use a namespaced Validator", DefaultPrefix)
 	}
@@ -148,13 +148,13 @@ func (c *Config) Validate() error {
 
 	if pkVal, pkValFound := nsval["pk"]; !pkValFound {
 		return fmt.Errorf("protocol prefix %s must support the /pk namespaced Validator", DefaultPrefix)
-	} else if _, ok := pkVal.(record.PublicKeyValidator); !ok {
+	} else if _, ok := pkVal.(reducer.PublicKeyReducer); !ok {
 		return fmt.Errorf("protocol prefix %s must use the record.PublicKeyValidator for the /pk namespace", DefaultPrefix)
 	}
 
 	if ipnsVal, ipnsValFound := nsval["ipns"]; !ipnsValFound {
 		return fmt.Errorf("protocol prefix %s must support the /ipns namespaced Validator", DefaultPrefix)
-	} else if _, ok := ipnsVal.(ipns.Validator); !ok {
+	} else if _, ok := ipnsVal.(reducer.IpnsReducer); !ok {
 		return fmt.Errorf("protocol prefix %s must use ipns.Validator for the /ipns namespace", DefaultPrefix)
 	}
 	return nil

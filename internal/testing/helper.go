@@ -5,9 +5,9 @@ import (
 	"errors"
 )
 
-type TestValidator struct{}
+type TestReducer struct{}
 
-func (TestValidator) Select(_ string, bs [][]byte) (int, error) {
+func (TestReducer) Reduce(_ string, bs [][]byte) ([]byte, int, error) {
 	index := -1
 	for i, b := range bs {
 		if bytes.Equal(b, []byte("newer")) {
@@ -19,11 +19,11 @@ func (TestValidator) Select(_ string, bs [][]byte) (int, error) {
 		}
 	}
 	if index == -1 {
-		return -1, errors.New("no rec found")
+		return nil, index, errors.New("no rec found")
 	}
-	return index, nil
+	return bs[index], index, nil
 }
-func (TestValidator) Validate(_ string, b []byte) error {
+func (TestReducer) Validate(_ string, b []byte) error {
 	if bytes.Equal(b, []byte("expired")) {
 		return errors.New("expired")
 	}

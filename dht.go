@@ -21,10 +21,10 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/metrics"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 	"github.com/libp2p/go-libp2p-kad-dht/rtrefresh"
 	kb "github.com/libp2p/go-libp2p-kbucket"
 	"github.com/libp2p/go-libp2p-kbucket/peerdiversity"
-	record "github.com/libp2p/go-libp2p-record"
 	recpb "github.com/libp2p/go-libp2p-record/pb"
 
 	"github.com/gogo/protobuf/proto"
@@ -92,7 +92,7 @@ type IpfsDHT struct {
 
 	birth time.Time // When this peer started up
 
-	Validator record.Validator
+	Reducer reducer.Reducer
 
 	ctx  context.Context
 	proc goprocess.Process
@@ -189,7 +189,7 @@ func New(ctx context.Context, h host.Host, options ...Option) (*IpfsDHT, error) 
 	dht.enableValues = cfg.EnableValues
 	dht.disableFixLowPeers = cfg.DisableFixLowPeers
 
-	dht.Validator = cfg.Validator
+	dht.Reducer = cfg.Reducer
 	dht.msgSender = net.NewMessageSenderImpl(h, dht.protocols)
 	dht.protoMessenger, err = pb.NewProtocolMessenger(dht.msgSender)
 	if err != nil {
@@ -624,7 +624,7 @@ func (dht *IpfsDHT) rtPeerLoop(proc goprocess.Process) {
 
 // peerFound signals the routingTable that we've found a peer that
 // might support the DHT protocol.
-// If we have a connection a peer but no exchange of a query RPC ->
+// If we have a connection to a peer but no exchange of a query RPC ->
 //
 //	LastQueriedAt=time.Now (so we don't ping it for some time for a liveliness check)
 //	LastUsefulAt=0

@@ -7,11 +7,11 @@ import (
 
 	dhtcfg "github.com/libp2p/go-libp2p-kad-dht/internal/config"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+	"github.com/libp2p/go-libp2p-kad-dht/reducer"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/libp2p/go-libp2p-kbucket/peerdiversity"
-	record "github.com/libp2p/go-libp2p-record"
 
 	ds "github.com/ipfs/go-datastore"
 )
@@ -101,10 +101,10 @@ func Mode(m ModeOpt) Option {
 // namespace) and IPNS records (under the "ipns" namespace). Setting the validator
 // implies that the user wants to control the validators and therefore the default
 // public key and IPNS validators will not be added.
-func Validator(v record.Validator) Option {
+func Reducer(r reducer.Reducer) Option {
 	return func(c *dhtcfg.Config) error {
-		c.Validator = v
-		c.ValidatorChanged = true
+		c.Reducer = r
+		c.ReducerChanged = true
 		return nil
 	}
 }
@@ -120,9 +120,9 @@ func Validator(v record.Validator) Option {
 // Example: Given a validator registered as `NamespacedValidator("ipns",
 // myValidator)`, all records with keys starting with `/ipns/` will be validated
 // with `myValidator`.
-func NamespacedValidator(ns string, v record.Validator) Option {
+func NamespacedReducer(ns string, v reducer.Reducer) Option {
 	return func(c *dhtcfg.Config) error {
-		nsval, ok := c.Validator.(record.NamespacedValidator)
+		nsval, ok := c.Reducer.(reducer.NamespacedReducer)
 		if !ok {
 			return fmt.Errorf("can only add namespaced validators to a NamespacedValidator")
 		}

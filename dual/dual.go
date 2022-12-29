@@ -343,12 +343,14 @@ func (d *DHT) GetValue(ctx context.Context, key string, opts ...routing.Option) 
 
 // SearchValue searches for better values from this value
 func (dht *DHT) SearchValue(ctx context.Context, key string, opts ...routing.Option) (<-chan []byte, error) {
-	p := helper.Parallel{Routers: []routing.Routing{dht.WAN, dht.LAN}, Validator: dht.WAN.Validator}
+	// TODO: migrate Parallel to Reducer
+	p := helper.Parallel{Routers: []routing.Routing{dht.WAN, dht.LAN}, Validator: dht.WAN.Reducer}
 	return p.SearchValue(ctx, key, opts...)
 }
 
 // GetPublicKey returns the public key for the given peer.
 func (dht *DHT) GetPublicKey(ctx context.Context, pid peer.ID) (ci.PubKey, error) {
-	p := helper.Parallel{Routers: []routing.Routing{dht.WAN, dht.LAN}, Validator: dht.WAN.Validator}
+	// TODO: migrate Parallel to Reducer
+	p := helper.Parallel{Routers: []routing.Routing{dht.WAN, dht.LAN}, Validator: dht.WAN.Reducer}
 	return p.GetPublicKey(ctx, pid)
 }
